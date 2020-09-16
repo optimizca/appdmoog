@@ -1,0 +1,148 @@
+##Clean Summary and Event Message from unwanted text 
+#set( $sm = ${latestEvent.summaryMessage} )
+#set( $sm = $sm.replace("<b>", "") )
+#set( $sm = $sm.replace("</b>", "") )
+#set( $sm = $sm.replace("<br>", "") )
+#set( $em = ${latestEvent.eventMessage} )
+#set( $em = $em.replace("<b>", "") )
+#set( $em = $em.replace("</b>", "") )
+#set( $em = $em.replace("<br>", "") )
+#set( $em = $em.replace("AppDynamics has detected a problem with", "") )
+#*
+--------------------------------------------------------------------
+                      Extract and store fields
+--------------------------------------------------------------------
+*#
+#set($currentSeverity=0)
+#if( ${topSeverity} == "ERROR" )
+   #set($currentSeverity=5)
+#elseif( ${topSeverity} == "WARN" )
+   #set($currentSeverity=3)
+#elseif( ${topSeverity} == "INFO")
+   #set($currentSeverity=0)
+#end
+#if ($latestEvent.application.id)
+         #set ($applicationId=${latestEvent.application.id})
+#else
+	#set( $applicationId= "" )
+#end
+#if ($latestEvent.application.name)
+         #set ($applicationName=${latestEvent.application.name})
+#else
+	#set( $applicationName= "" )
+#end
+#if ($latestEvent.tier.name)
+         #set ($tierName=${latestEvent.tier.name})
+#else
+	#set( $tierName= "" )
+#end
+#if ($latestEvent.tier.Id)
+         #set ($tierId=${latestEvent.tier.Id})
+#else
+	#set( $tierId= "" )
+#end
+#if ($latestEvent.node.name)
+         #set ($nodeName=${latestEvent.node.name})
+#else
+	#set( $nodeName= "" )
+#end
+#if ($latestEvent.node.Id)
+         #set ($nodeId=${latestEvent.node.Id})
+#else
+	#set( $nodeId= "" )
+#end
+#set ( $machineName= "")
+#set ($machineIP="")
+#foreach(${value} in ${fullEventsNodeMap.values()})
+      #if(${value.machineName})
+        #set ( $machineName = ${value.machineName} )
+        #set ( $machineIP = ${value.ipAddresses} )
+      #end
+#end
+#*
+--------------------------------------------------------------------
+                      Set affectedEntity
+--------------------------------------------------------------------
+*#
+#set($affectedEntityName=${latestEvent.affectedEntities[0].name})
+#set($affectedEntityId=${latestEvent.affectedEntities[0].id})
+#set($affectedEntityTypeDisplayName="${latestEvent.affectedEntities[0].entityTypeDisplayName}")
+#set($affectedEntityType="${latestEvent.affectedEntities[0].entityType}")
+#*
+--------------------------------------------------------------------
+                      Set Source 
+--------------------------------------------------------------------
+*#
+#set ( $source= "")
+#if(${affectedEntityType}=="DB_SERVER")
+      #set ( $source= ${machineName})
+#elseif(${affectedEntityType}=="BUSINESS_TRANSACTION")
+      #set ( $source= "${tierName}:${affectedEntityName}")
+#elseif($nodeName && $nodeName!="" && $affectedEntityTypeDisplayName!="Tier") 
+       #set ( $source= ${nodeName})
+#elseif($tierName && $tierName!="")
+       #set ( $source= ${tierName})
+#elseif($applicationName && $applicationName!="")
+       #set ( $source= ${applicationName})
+#end
+#*
+--------------------------------------------------------------------
+                      Set Signature and Class
+--------------------------------------------------------------------
+*#
+#set ( $dedupe_key= "")
+#set ( $class= "")
+#if(${latestEvent.healthRuleEvent})   
+   #set ( $class= ${affectedEntityTypeDisplayName})
+   #if(${affectedEntityType}=="DB_SERVER")
+      #set ( $dedupe_key= "${latestEvent.healthRule.name}::${affectedEntityName}")
+   #elseif(${affectedEntityType}=="BUSINESS_TRANSACTION")
+      #set ( $dedupe_key= "${latestEvent.healthRule.name}::${applicationName}::${tierName}::${affectedEntityName}")
+   #elseif($nodeName && $nodeName!=""&& $affectedEntityTypeDisplayName!="Tier") 
+        #set ( $dedupe_key= "${latestEvent.healthRule.name}::${applicationName}::${tierName}::${nodeName}")
+   #elseif($tierName && $tierName!="")
+       #set ( $dedupe_key= "${latestEvent.healthRule.name}::${applicationName}::${tierName}")
+   #elseif($applicationName && $applicationName!="")
+       #set ( $dedupe_key= "${latestEvent.healthRule.name}::${applicationName}")
+   #end
+#end
+#if(!${latestEvent.healthRuleEvent})   
+   #set ( $class= ${latestEvent.eventTypeKey})
+   #if($nodeName && $nodeName!="") 
+        #set ( $dedupe_key= "${latestEvent.eventTypeKey}::${applicationName}::${tierName}::${nodeName}")
+   #elseif($tierName && $tierName!="")
+       #set ( $dedupe_key= "${latestEvent.eventTypeKey}::${applicationName}::${tierName}")
+   #elseif($applicationName && $applicationName!="")
+       #set ( $dedupe_key= "${latestEvent.eventTypeKey}::${applicationName}")
+   #end
+#end
+#*
+--------------------------------------------------------------------
+                      Set the JSON payload
+--------------------------------------------------------------------
+*#
+{
+    "source":"$source",
+    "dedupe_key":"$dedupe_key",
+    "description": "${em}",
+    "severity":$currentSeverity ,
+    "service": [
+        " $applicationName"
+    ],
+     #if(${latestEvent.healthRule.name})
+       "check": "${latestEvent.healthRule.name}",
+     #else
+        "check": "${latestEvent.eventTypeKey}",
+     #end
+    "class":"$class",
+    "manager":"AppDynamics",
+    "manager_id":"$controllerUrl",
+     "tags": {
+        "deepLink": "${latestEvent.deepLink}",
+        "application":"${applicationName}",
+        "tierName":"${tierName}",
+        "nodeName":"${nodeName}",
+       "machineName":"${machineName}"
+    }
+   
+}
